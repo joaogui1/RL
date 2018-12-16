@@ -43,13 +43,13 @@ episode_nb = 0
 # initialize variables
 resume = True
 running_reward = None
-epochs_before_saving = 10
+epochs_before_saving = 500
 log_dir = './log' + datetime.now().strftime("%Y%m%d-%H%M%S") + "/"
 
 # load pre-trained model if exist
-if (resume and os.path.isfile('my_model_weights.h5')):
+if (resume and os.path.isfile('One_Dense.h5')):
     print("loading previous weights")
-    model.load_weights('my_model_weights.h5')
+    model.load_weights('One_Dense.h5')
 
 # add a callback tensorboard object to visualize learning
 tbCallBack = callbacks.TensorBoard(log_dir=log_dir, histogram_freq=0,
@@ -90,8 +90,8 @@ while(True):
 
         # Saving the weights used by our model
         if episode_nb % epochs_before_saving == 0:
-            model.save_weights('my_model_weights' +
-                               datetime.now().strftime("%Y%m%d-%H%M%S") + '.h5')
+            model.save_weights('One_Dense' +
+                               str(int(episode_nb/epochs_before_saving)) + '.h5')
 
         # Log the reward
         running_reward = reward_sum if running_reward is None else running_reward * 0.99 + \
@@ -99,7 +99,7 @@ while(True):
         tflog('running_reward', running_reward, custom_dir=log_dir)
 
         # Reinitialization
-        x_train, y_train, rewards = [],[],[]
+        x_train, y_train, rewards = [], [], []
         observation = env.reset()
         reward_sum = 0
         prev_input = None
