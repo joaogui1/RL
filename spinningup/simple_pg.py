@@ -1,3 +1,5 @@
+from typing import Any, Tuple
+from functools import partial
 import jax
 from jax import jit, grad
 import jax.numpy as jnp
@@ -7,8 +9,10 @@ from numpyro.distributions.discrete import Categorical
 import gym
 from gym.spaces import Discrete, Box
 
+OptState = Any
+
 def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, 
-          epochs=50, batch_size=5000, render=False):
+          epochs=5, batch_size=5000, render=False):
 
     # make environment, check spaces, get obs / act dims
     env = gym.make(env_name)
@@ -21,32 +25,51 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
     n_acts = env.action_space.n
 
     # make core of policy network
-    logits_net = hk.transform(hk.nets.MLP(output_sizes=[obs_dim]+hidden_sizes+[n_acts], activation=jnp.tanh))
-
+    def mlp(obs_dim, hidden_sizes, n_acts, x):
+      net = hk.nets.MLP(output_sizes=[obs_dim]+hidden_sizes+[n_acts], activation=jnp.tanh)
+      return net(x)
+    
+    logits_net = hk.transform(partial(mlp, obs_dim, hidden_sizes, n_acts))    
+    
     # make function to compute action distribution
     def get_policy(params, obs):
         logits = logits_net.apply(params, obs)
         return Categorical(logits=logits)
 
     # make action selection function (outputs int actions, sampled from policy)
-    def get_action(params, obs):
-        return get_policy(params, obs).sample()
+    def get_action(key, params, obs):
+        return get_policy(params, obs).sample(key)
 
     # make loss function whose gradient, for the right data, is policy gradient
-    def compute_loss(params, obs, act, weights):
+    def compute_loss(params, obs, act, returns):
         logp = get_policy(params, obs).log_prob(act)
-        return jnp.mean(-(logp * weights))
-    loss_obj = hk.transform(compute_loss)
-    
+        return jnp.mean(-(logp * returns))
+
     # make optimizer
     opt_init, opt_update = optix.adam(lr)
 
+    #step update
+    def update(params: hk.Params,
+          opt_state: OptState,
+          batch_obs: jnp.DeviceArray,
+          batch_acts: jnp.DeviceArray,
+          batch_returns:jnp.DeviceArray) -> Tuple[hk.Params, OptState, jnp.DeviceArray]:
+                  
+      batch_loss, g = jax.value_and_grad(compute_loss)(params,
+                               batch_obs,
+                               batch_acts,
+                               batch_returns)
+      updates, opt_state = opt_update(g, opt_state)
+      new_params = optix.apply_updates(params, updates)
+      return new_params, opt_state, batch_loss
+        
+
     # for training policy
-    def train_one_epoch():
+    def train_one_epoch(params, opt_state):
         # make some empty lists for logging.
         batch_obs = []          # for observations
         batch_acts = []         # for actions
-        batch_weights = []      # for R(tau) weighting in policy gradient
+        batch_returns = []      # for R(tau) weighting in policy gradient
         batch_rets = []         # for measuring episode returns
         batch_lens = []         # for measuring episode lengths
 
@@ -69,7 +92,9 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
             batch_obs.append(obs.copy())
 
             # act in the environment
-            act = get_action(torch.as_tensor(obs, dtype=torch.float32))
+            #TODO(joaogui1) fix random key
+            act = get_action(jax.random.PRNGKey(3), params, jnp.asarray(obs, dtype=jnp.float32))
+            act = int(act)
             obs, rew, done, _ = env.step(act)
 
             # save action, reward
@@ -83,7 +108,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
                 batch_lens.append(ep_len)
 
                 # the weight for each logprob(a|s) is R(tau)
-                batch_weights += [ep_ret] * ep_len
+                batch_returns += [ep_ret] * ep_len
 
                 # reset episode-specific variables
                 obs, done, ep_rews = env.reset(), False, []
@@ -96,17 +121,19 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
                     break
 
         # take a single policy gradient update step
-        optimizer.zero_grad()
-        batch_loss = compute_loss(obs=torch.as_tensor(batch_obs, dtype=torch.float32),
-                                  act=torch.as_tensor(batch_acts, dtype=torch.int32),
-                                  weights=torch.as_tensor(batch_weights, dtype=torch.float32)
-                                  )
-        batch_loss.backward()
-        optimizer.step()
-        return batch_loss, batch_rets, batch_lens
+        params, opt_state, batch_loss = update(params,
+                                              opt_state,
+                                              jnp.asarray(batch_obs, dtype=jnp.float32),
+                                              jnp.asarray(batch_acts, dtype=jnp.float32),
+                                              jnp.asarray(batch_returns, dtype=jnp.float32))
+        return batch_loss, batch_rets, batch_lens, params, opt_state
 
+    sample_ts = env.reset()
+    ts_with_batch = jax.tree_map(lambda t: jnp.expand_dims(t, 0), sample_ts)
+    params = logits_net.init(jax.random.PRNGKey(3), sample_ts)
+    opt_state = opt_init(params)
     # training loop
     for i in range(epochs):
-        batch_loss, batch_rets, batch_lens = train_one_epoch()
+        batch_loss, batch_rets, batch_lens, params, opt_state = train_one_epoch(params, opt_state)
         print('epoch: %3d \t loss: %.3f \t return: %.3f \t ep_len: %.3f'%
-                (i, batch_loss, np.mean(batch_rets), np.mean(batch_lens)))
+                (i, batch_loss, jnp.mean(batch_rets), jnp.mean(batch_lens)))
