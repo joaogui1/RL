@@ -143,3 +143,13 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
     for i in range(epochs):
         batch_loss, batch_rets, batch_lens, params, opt_state = train_one_epoch(params, opt_state, keychain[i])
         print(f'epoch: {i:.3}\t loss: {batch_loss:.4}\t return: {mean(batch_rets):.4} \t ep_len: {mean(batch_lens):.4}')
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env_name', '--env', type=str, default='CartPole-v0')
+    parser.add_argument('--render', action='store_true')
+    parser.add_argument('--lr', type=float, default=1e-2)
+    args = parser.parse_args()
+    print('\nUsing simplest formulation of policy gradient.\n')
+    train(env_name=args.env_name, render=args.render, lr=args.lr)
