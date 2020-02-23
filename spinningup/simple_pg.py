@@ -11,9 +11,6 @@ from gym.spaces import Discrete, Box
 
 OptState = Any
 
-def mean(x):
-  return sum(x)/len(x)
-
 def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, 
           epochs=50, batch_size=5000, render=False):
 
@@ -35,7 +32,8 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
     logits_net = hk.transform(partial(mlp, obs_dim, hidden_sizes, n_acts))
     
     # make function to compute action distribution
-    def get_policy(params, obs):
+    def get_policy(params:hk.Params, 
+                    obs:Any):
         logits = logits_net.apply(params, obs)
         return Categorical(logits=logits)
 
