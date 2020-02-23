@@ -89,7 +89,8 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
 
         # collect experience by acting in the environment with current policy
         while True:
-
+          
+            key, _ = jax.random.split(key, 2)
             # rendering
             if (not finished_rendering_this_epoch) and render:
                 env.render()
@@ -142,7 +143,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
     # training loop
     for i in range(epochs):
         batch_loss, batch_rets, batch_lens, params, opt_state = train_one_epoch(params, opt_state, keychain[i])
-        print(f'epoch: {i:.3}\t loss: {batch_loss:.4}\t return: {mean(batch_rets):.4} \t ep_len: {mean(batch_lens):.4}')
+        print(f'epoch: {i:3}\t loss: {batch_loss:.4}\t return: {mean(batch_rets):.4} \t ep_len: {mean(batch_lens):.4}')
 
 if __name__ == '__main__':
     import argparse
