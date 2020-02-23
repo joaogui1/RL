@@ -24,6 +24,13 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
     obs_dim = env.observation_space.shape[0]
     n_acts = env.action_space.n
 
+    def reward_to_go(rews):
+        n = len(rews)
+        rtgs = jnp.zeros_like(rews)
+        for i in reversed(range(n)):
+            rtgs[i] = rews[i] + (rtgs[i+1] if i+1 < n else 0)
+        return rtgs
+
     # make core of policy network
     def mlp(obs_dim, hidden_sizes, n_acts, x):
       net = hk.nets.MLP(output_sizes=[obs_dim]+hidden_sizes+[n_acts], activation=jnp.tanh)
@@ -112,7 +119,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
                 batch_lens.append(ep_len)
 
                 # the weight for each logprob(a|s) is R(tau)
-                batch_returns += [ep_ret] * ep_len
+                batch_returns += list(reward_to_go(ep_rews))
 
                 # reset episode-specific variables
                 obs, done, ep_rews = env.reset(), False, []
