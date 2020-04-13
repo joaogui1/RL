@@ -24,17 +24,10 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
     obs_dim = env.observation_space.shape[0]
     n_acts = env.action_space.n
 
-    def reward_to_go(rews):
-        n = len(rews)
-        rtgs = jnp.zeros_like(rews)
-        for i in reversed(range(n)):
-            rtgs[i] = rews[i] + (rtgs[i+1] if i+1 < n else 0)
-        return rtgs
-
     # make core of policy network
     def mlp(obs_dim, hidden_sizes, n_acts, x):
-        net = hk.nets.MLP(output_sizes=[obs_dim]+hidden_sizes+[n_acts], activation=jnp.tanh)
-        return net(x)
+      net = hk.nets.MLP(output_sizes=[obs_dim]+hidden_sizes+[n_acts], activation=jnp.tanh)
+      return net(x)
     
     logits_net = hk.transform(partial(mlp, obs_dim, hidden_sizes, n_acts))
     
@@ -66,13 +59,13 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
           batch_acts: jnp.DeviceArray,
           batch_returns:jnp.DeviceArray) -> Tuple[hk.Params, OptState, jnp.DeviceArray]:
                   
-        batch_loss, g = jax.value_and_grad(compute_loss)(params,
+      batch_loss, g = jax.value_and_grad(compute_loss)(params,
                                batch_obs,
                                batch_acts,
                                batch_returns)
-        updates, opt_state = opt_update(g, opt_state)
-        new_params = optix.apply_updates(params, updates)
-        return new_params, opt_state, batch_loss
+      updates, opt_state = opt_update(g, opt_state)
+      new_params = optix.apply_updates(params, updates)
+      return new_params, opt_state, batch_loss
         
 
     # for training policy
@@ -119,7 +112,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
                 batch_lens.append(ep_len)
 
                 # the weight for each logprob(a|s) is R(tau)
-                batch_returns += list(reward_to_go(ep_rews))
+                batch_returns += [ep_ret] * ep_len
 
                 # reset episode-specific variables
                 obs, done, ep_rews = env.reset(), False, []
